@@ -1,0 +1,47 @@
+trigger:
+- master
+
+pool:
+  vmImage: 'ubuntu-latest'
+
+steps:
+- task: PublishPipelineArtifact@1
+  displayName: 'Publish dist as an artifact'
+  inputs:
+    targetPath: '$(Pipeline.Workspace)/s/'
+    artifact: 'source'
+    publishLocation: 'pipeline'
+
+- task: Docker@2
+  displayName: Build and push Docker Image Tag
+  inputs:
+    containerRegistry: '$(DOCKER_SERVICE_ENDPOINT)'
+    repository: $(DOCKER_NAME)
+    Dockerfile: '$(Pipeline.Workspace)/s/Dockerfile'
+    buildContext: '$(Pipeline.Workspace)/s'
+
+- script: |
+   echo ****Replacing environment variables****
+   DOCKER_IMAGE_TAG=$(DOCKER_REGISTRY)/$(DOCKER_NAME):$(Build.BuildId)
+   < redis-persistentvolumeclaim.yaml sed  ' s|{{STORAGE_CLASS_NAME}}|'$(STORAGE_CLASS_NAME)'|g ' > redis-pvc.yaml
+   < redis-deployment.yaml sed  ' s|{{DOCKER_IMAGE_TAG}}|'$DOCKER_IMAGE_TAG'|g ' > deployment-prod.yml
+  workingDirectory: '$(Pipeline.Workspace)/s'
+  displayName: 'Setting Environment variables'
+
+- task: Kubernetes@1
+  displayName: 'kubectl - creating pvc ...'
+  inputs:
+    kubernetesServiceEndpoint: '$(k8S_SERVICE_ENDPOINT)'
+    command: apply
+    useConfigurationFile: true
+    configuration: '$(Pipeline.Workspace)/s/redis-pvc.yaml'
+    workingDirectory: '$(Pipeline.Workspace)/s'
+
+- task: Kubernetes@1
+  displayName: 'kubectl Applying custom redis image ...'
+  inputs:
+    kubernetesServiceEndpoint: '$(k8S_SERVICE_ENDPOINT)'
+    command: apply
+    useConfigurationFile: true
+    configuration: '$(Pipeline.Workspace)/s/deployment-prod.yml'
+    workingDirectory: '$(Pipeline.Workspace)/s'

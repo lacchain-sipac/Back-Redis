@@ -1,0 +1,59 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ms-redis-deployment
+  namespace: kube-honduras
+  labels:
+    app: redis-honduras
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: redis-honduras
+  strategy:
+    type: Recreate
+    
+  template:
+    metadata:
+      labels:
+        app: redis-honduras
+    spec:
+      containers:
+        - image: {{DOCKER_IMAGE_TAG}} #us.gcr.io/hondu-pf/honduras-redis:1.0.2
+          name: redis
+          imagePullPolicy: Always
+          resources:
+            requests:
+              memory: "256Mi"
+            limits:
+              memory: "512Mi"
+          volumeMounts:
+          - mountPath: /data
+            name: redisdata
+          ports:
+            - containerPort: 6379
+              name: http
+              protocol: TCP
+          livenessProbe:
+            tcpSocket:
+              port: 6379
+            initialDelaySeconds: 60
+            periodSeconds: 30
+      volumes:
+      - name: redisdata
+        persistentVolumeClaim:
+          claimName: redis-volume
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-service
+  namespace: kube-honduras
+spec:
+  selector:
+    app: redis-honduras
+  ports:
+    - protocol: TCP
+      port: 6379
+      targetPort: 6379
+      name: http
